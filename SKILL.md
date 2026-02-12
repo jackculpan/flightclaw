@@ -22,31 +22,40 @@ bash skills/flightclaw/setup.sh
 ## Scripts
 
 ### Search Flights
-Find flights for a specific route and date.
+Find flights for a specific route and date. Supports multiple airports and date ranges.
 
 ```bash
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --cabin BUSINESS
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --return-date 2025-07-08
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --stops NON_STOP --results 10
+# Multiple airports (searches all combinations)
+python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01
+# Date range (searches each day)
+python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --date-to 2025-07-05
+# Both
+python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03
 ```
 
 Arguments:
-- `origin` - IATA airport code (e.g. LHR, JFK, SFO)
-- `destination` - IATA airport code
+- `origin` - IATA airport code(s), comma-separated (e.g. LHR or LHR,MAN)
+- `destination` - IATA airport code(s), comma-separated (e.g. JFK or JFK,EWR)
 - `date` - Departure date (YYYY-MM-DD)
+- `--date-to` - End of date range (YYYY-MM-DD). Searches each day from date to date-to inclusive.
 - `--return-date` - Return date for round trips (YYYY-MM-DD)
 - `--cabin` - ECONOMY (default), PREMIUM_ECONOMY, BUSINESS, FIRST
 - `--stops` - ANY (default), NON_STOP, ONE_STOP, TWO_STOPS
 - `--results` - Number of results (default: 5)
 
 ### Track a Flight
-Add a route to the price tracking list and record the current price.
+Add a route to the price tracking list and record the current price. Supports multiple airports and date ranges (creates a separate tracking entry for each combination).
 
 ```bash
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --target-price 400
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --return-date 2025-07-08 --cabin BUSINESS
+# Track multiple airports and dates
+python skills/flightclaw/scripts/track-flight.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03 --target-price 400
 ```
 
 Arguments:

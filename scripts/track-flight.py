@@ -5,7 +5,8 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from itertools import product
 
 from fli.models import (
     Airport,
@@ -51,9 +52,10 @@ def save_tracked(tracked):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Track a flight route")
-    parser.add_argument("origin", help="Origin airport IATA code")
-    parser.add_argument("destination", help="Destination airport IATA code")
+    parser.add_argument("origin", help="Origin airport IATA code(s), comma-separated (e.g. LHR or LHR,MAN)")
+    parser.add_argument("destination", help="Destination airport IATA code(s), comma-separated (e.g. JFK or JFK,EWR)")
     parser.add_argument("date", help="Departure date (YYYY-MM-DD)")
+    parser.add_argument("--date-to", help="End of date range (YYYY-MM-DD). Tracks each day from date to date-to inclusive.")
     parser.add_argument("--return-date", help="Return date (YYYY-MM-DD)")
     parser.add_argument("--cabin", default="ECONOMY", choices=SEAT_MAP.keys())
     parser.add_argument("--stops", default="ANY", choices=STOPS_MAP.keys())
@@ -61,75 +63,103 @@ def parse_args():
     return parser.parse_args()
 
 
+def expand_routes(origins_str, destinations_str, date_str, date_to_str=None):
+    origins = [o.strip().upper() for o in origins_str.split(",")]
+    destinations = [d.strip().upper() for d in destinations_str.split(",")]
+    start = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if date_to_str:
+        end = datetime.strptime(date_to_str, "%Y-%m-%d").date()
+    else:
+        end = start
+    dates = []
+    current = start
+    while current <= end:
+        dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+    return list(product(origins, destinations, dates))
+
+
 def main():
     args = parse_args()
-
-    try:
-        origin = Airport[args.origin.upper()]
-        destination = Airport[args.destination.upper()]
-    except KeyError as e:
-        print(f"Unknown airport code: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    route_id = f"{args.origin.upper()}-{args.destination.upper()}-{args.date}"
-    if args.return_date:
-        route_id += f"-RT-{args.return_date}"
-
+    combos = expand_routes(args.origin, args.destination, args.date, args.date_to)
     tracked = load_tracked()
-    if any(t["id"] == route_id for t in tracked):
-        print(f"Already tracking {route_id}")
-        sys.exit(0)
+    added = 0
+    skipped = 0
 
-    segments = [FlightSegment(departure_airport=[[origin, 0]], arrival_airport=[[destination, 0]], travel_date=args.date)]
+    for orig_code, dest_code, date in combos:
+        route_id = f"{orig_code}-{dest_code}-{date}"
+        if args.return_date:
+            route_id += f"-RT-{args.return_date}"
 
-    trip_type = TripType.ONE_WAY
-    if args.return_date:
-        segments.append(FlightSegment(departure_airport=[[destination, 0]], arrival_airport=[[origin, 0]], travel_date=args.return_date))
-        trip_type = TripType.ROUND_TRIP
+        if any(t["id"] == route_id for t in tracked):
+            print(f"Already tracking {route_id}")
+            skipped += 1
+            continue
 
-    filters = FlightSearchFilters(
-        trip_type=trip_type,
-        passenger_info=PassengerInfo(adults=1),
-        flight_segments=segments,
-        seat_type=SEAT_MAP[args.cabin],
-        stops=STOPS_MAP[args.stops],
-    )
+        try:
+            origin = Airport[orig_code]
+            destination = Airport[dest_code]
+        except KeyError as e:
+            print(f"Unknown airport code: {e}", file=sys.stderr)
+            continue
 
-    print(f"Searching {args.origin.upper()} -> {args.destination.upper()} on {args.date}...")
-    results, currency = search_with_currency(filters, top_n=1)
+        segments = [FlightSegment(departure_airport=[[origin, 0]], arrival_airport=[[destination, 0]], travel_date=date)]
 
-    now = datetime.now(timezone.utc).isoformat()
-    price_entry = {"timestamp": now, "best_price": None, "airline": None}
+        trip_type = TripType.ONE_WAY
+        if args.return_date:
+            segments.append(FlightSegment(departure_airport=[[destination, 0]], arrival_airport=[[origin, 0]], travel_date=args.return_date))
+            trip_type = TripType.ROUND_TRIP
 
-    if results:
-        flight = results[0]
-        if isinstance(flight, tuple):
-            flight = flight[0]
-        price_entry["best_price"] = round(flight.price, 2)
-        if flight.legs:
-            price_entry["airline"] = flight.legs[0].airline.name
+        filters = FlightSearchFilters(
+            trip_type=trip_type,
+            passenger_info=PassengerInfo(adults=1),
+            flight_segments=segments,
+            seat_type=SEAT_MAP[args.cabin],
+            stops=STOPS_MAP[args.stops],
+        )
 
-    entry = {
-        "id": route_id,
-        "origin": args.origin.upper(),
-        "destination": args.destination.upper(),
-        "date": args.date,
-        "return_date": args.return_date,
-        "cabin": args.cabin,
-        "stops": args.stops,
-        "target_price": args.target_price,
-        "currency": currency,
-        "added_at": now,
-        "price_history": [price_entry],
-    }
+        print(f"Searching {orig_code} -> {dest_code} on {date}...")
+        results, currency = search_with_currency(filters, top_n=1)
 
-    tracked.append(entry)
+        now = datetime.now(timezone.utc).isoformat()
+        price_entry = {"timestamp": now, "best_price": None, "airline": None}
+
+        if results:
+            flight = results[0]
+            if isinstance(flight, tuple):
+                flight = flight[0]
+            price_entry["best_price"] = round(flight.price, 2)
+            if flight.legs:
+                price_entry["airline"] = flight.legs[0].airline.name
+
+        entry = {
+            "id": route_id,
+            "origin": orig_code,
+            "destination": dest_code,
+            "date": date,
+            "return_date": args.return_date,
+            "cabin": args.cabin,
+            "stops": args.stops,
+            "target_price": args.target_price,
+            "currency": currency,
+            "added_at": now,
+            "price_history": [price_entry],
+        }
+
+        tracked.append(entry)
+        added += 1
+
+        if price_entry["best_price"]:
+            print(f"  {fmt_price(price_entry['best_price'], currency)} ({price_entry['airline']})")
+
     save_tracked(tracked)
 
-    print(f"Now tracking: {args.origin.upper()} -> {args.destination.upper()} on {args.date}")
-    if price_entry["best_price"]:
-        print(f"Current best price: {fmt_price(price_entry['best_price'], currency)} ({price_entry['airline']})")
+    print(f"\nNow tracking {added} new route(s).", end="")
+    if skipped:
+        print(f" ({skipped} already tracked)", end="")
+    print()
     if args.target_price:
+        currency = currency if 'currency' in dir() else "USD"
         print(f"Target price: {fmt_price(args.target_price, currency)}")
 
 

@@ -21,11 +21,23 @@ bash skills/flightclaw/setup.sh
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01
 python skills/flightclaw/scripts/search-flights.py LHR SFO 2025-06-01 --cabin BUSINESS --stops NON_STOP
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --return-date 2025-07-08
+
+# Multiple airports (searches all combinations)
+python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01
+
+# Date range
+python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --date-to 2025-07-05
+
+# Both
+python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03
 ```
 
 ### Track a route
 ```bash
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --target-price 400
+
+# Track multiple airports and date ranges at once
+python skills/flightclaw/scripts/track-flight.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03 --target-price 400
 ```
 
 ### Check for price drops
@@ -43,8 +55,8 @@ python skills/flightclaw/scripts/list-tracked.py
 
 ## How it works
 
-- `search-flights.py` queries Google Flights via the `fli` library and returns prices, airlines, times
-- `track-flight.py` adds a route to `data/tracked.json` and records the initial price
+- `search-flights.py` queries Google Flights via the `fli` library and returns prices, airlines, times. Supports comma-separated airports and `--date-to` for date ranges
+- `track-flight.py` adds routes to `data/tracked.json` and records initial prices. Same multi-airport/date-range support
 - `check-prices.py` re-checks all tracked routes and compares to previous prices. Outputs alerts for significant drops or when target prices are reached
 - Prices are returned in the user's local currency based on IP location, auto-detected from the Google Flights API
 - Price history persists in `data/tracked.json` and is backed up via R2
