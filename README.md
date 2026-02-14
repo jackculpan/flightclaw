@@ -1,62 +1,84 @@
 # flightclaw
 
-An [OpenClaw](https://github.com/jackculpan/openclaw) skill that tracks flight prices from Google Flights. Search routes, monitor prices over time, and get alerts when prices drop.
+Track flight prices from Google Flights. Search routes, monitor prices over time, and get alerts when prices drop.
 
-## Install
+## MCP Server
+
+FlightClaw runs as a local [MCP](https://modelcontextprotocol.io) server, giving any MCP-compatible client (Claude Code, Claude Desktop, etc.) access to flight search and tracking tools.
+
+### Setup
 
 ```bash
-npx skills add jackculpan/flightclaw
+# Install dependencies
+pip install flights "mcp[cli]"
+
+# Add to Claude Code
+claude mcp add flightclaw -- python3 /path/to/flightclaw/server.py
 ```
 
-Or manually:
+Or in Claude Desktop, add to `claude_desktop_config.json`:
 
-```bash
-bash skills/flightclaw/setup.sh
+```json
+{
+  "mcpServers": {
+    "flightclaw": {
+      "command": "python3",
+      "args": ["/path/to/flightclaw/server.py"]
+    }
+  }
+}
 ```
 
-## Usage
+### Tools
 
-### Search flights
+| Tool | Description |
+|------|-------------|
+| `search_flights` | Search Google Flights for prices on a route |
+| `track_flight` | Add a route to price tracking with optional target price |
+| `check_prices` | Check all tracked flights for price changes and alerts |
+| `list_tracked` | List all tracked flights with price history |
+| `remove_tracked` | Remove a route from tracking |
+
+All tools support comma-separated airport codes (e.g. `LHR,MAN`) and date ranges via `date_to` for batch searching.
+
+### Example prompts
+
+- "Search flights from LHR to JFK on 2025-08-01 in business class"
+- "Track LHR to SFO on 2025-07-01 with a target price of $400"
+- "Check my tracked flights for price drops"
+- "List all my tracked flights"
+
+## CLI Scripts
+
+The original CLI scripts are still available in `scripts/`:
+
 ```bash
-python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01
-python skills/flightclaw/scripts/search-flights.py LHR SFO 2025-06-01 --cabin BUSINESS --stops NON_STOP
-python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --return-date 2025-07-08
+# Search flights
+python scripts/search-flights.py LHR JFK 2025-07-01 --cabin BUSINESS
 
-# Multiple airports (searches all combinations)
-python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01
+# Multiple airports and date ranges
+python scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-05
 
-# Date range
-python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --date-to 2025-07-05
+# Track a route
+python scripts/track-flight.py LHR JFK 2025-07-01 --target-price 400
 
-# Both
-python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03
-```
+# Check for price drops (good for cron)
+python scripts/check-prices.py --threshold 5
 
-### Track a route
-```bash
-python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --target-price 400
-
-# Track multiple airports and date ranges at once
-python skills/flightclaw/scripts/track-flight.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03 --target-price 400
-```
-
-### Check for price drops
-```bash
-python skills/flightclaw/scripts/check-prices.py
-python skills/flightclaw/scripts/check-prices.py --threshold 5
-```
-
-Set this up on a cron to get regular price alerts via your connected chat channel (Telegram, Discord, Slack).
-
-### List tracked flights
-```bash
-python skills/flightclaw/scripts/list-tracked.py
+# List tracked flights
+python scripts/list-tracked.py
 ```
 
 ## How it works
 
-- `search-flights.py` queries Google Flights via the `fli` library and returns prices, airlines, times. Supports comma-separated airports and `--date-to` for date ranges
-- `track-flight.py` adds routes to `data/tracked.json` and records initial prices. Same multi-airport/date-range support
-- `check-prices.py` re-checks all tracked routes and compares to previous prices. Outputs alerts for significant drops or when target prices are reached
-- Prices are returned in the user's local currency based on IP location, auto-detected from the Google Flights API
-- Price history persists in `data/tracked.json` and is backed up via R2
+- Queries Google Flights via the `fli` library
+- Prices returned in user's local currency (auto-detected from IP)
+- Price history persists in `data/tracked.json`
+- Supports round trips (`return_date`), cabin classes, stop filters
+- Multi-airport and date-range searches expand into all combinations
+
+## Install (OpenClaw)
+
+```bash
+npx skills add jackculpan/flightclaw
+```

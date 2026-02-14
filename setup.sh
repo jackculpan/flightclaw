@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Installing flight-tracker dependencies..."
-pip install flights
+echo "Installing flightclaw dependencies..."
+pip install flights "mcp[cli]"
 mkdir -p "$(dirname "$0")/data"
-echo "Done. flight-tracker is ready to use."
+echo "Done. flightclaw is ready to use."
