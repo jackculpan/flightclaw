@@ -1,6 +1,6 @@
 ---
 name: flightclaw
-description: Track flight prices using Google Flights data. Search flights, track routes over time, and get alerts when prices drop. Requires Python 3.10+ and the 'flights' pip package. Run setup.sh to install dependencies.
+description: Track flight prices using Google Flights data. Search flights, find cheapest dates, filter by airline/time/duration/price, track routes over time, and get alerts when prices drop. Also runs as an MCP server. Requires Python 3.10+ and the 'flights' and 'mcp' pip packages. Run setup.sh to install dependencies.
 ---
 
 # flightclaw
@@ -81,6 +81,19 @@ Show all flights being tracked with current vs original prices.
 ```bash
 python skills/flightclaw/scripts/list-tracked.py
 ```
+
+## MCP Server
+
+FlightClaw also runs as an MCP server with extended search capabilities:
+
+```bash
+pip install flights "mcp[cli]"
+claude mcp add flightclaw -- python3 server.py
+```
+
+MCP tools: `search_flights`, `search_dates`, `track_flight`, `check_prices`, `list_tracked`, `remove_tracked`
+
+Additional MCP filters: passengers (adults/children/infants), airline filter, price limit, max flight duration, departure/arrival time restrictions, layover duration, sort order, and cheapest-date calendar search.
 
 ## Currency
 

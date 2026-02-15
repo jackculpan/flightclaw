@@ -15,13 +15,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scr
 
 from fli.models import (
     Airport,
+    DateSearchFilters,
     FlightSearchFilters,
     FlightSegment,
+    LayoverRestrictions,
     MaxStops,
     PassengerInfo,
+    PriceLimit,
     SeatType,
+    SortBy,
+    TimeRestrictions,
     TripType,
 )
+from fli.models.google_flights.base import Airline
+from fli.search import SearchDates
 from search_utils import fmt_price, search_with_currency
 
 mcp = FastMCP("flightclaw")
@@ -41,6 +48,14 @@ STOPS_MAP = {
     "NON_STOP": MaxStops.NON_STOP,
     "ONE_STOP": MaxStops.ONE_STOP_OR_FEWER,
     "TWO_STOPS": MaxStops.TWO_OR_FEWER_STOPS,
+}
+
+SORT_MAP = {
+    "BEST": SortBy.TOP_FLIGHTS,
+    "CHEAPEST": SortBy.CHEAPEST,
+    "DEPARTURE": SortBy.DEPARTURE_TIME,
+    "ARRIVAL": SortBy.ARRIVAL_TIME,
+    "DURATION": SortBy.DURATION,
 }
 
 
@@ -70,20 +85,83 @@ def _expand_routes(origins_str, destinations_str, date_str, date_to_str=None):
     return list(product(origins, destinations, dates))
 
 
-def _build_filters(orig_code, dest_code, date, return_date=None, cabin="ECONOMY", stops="ANY"):
+def _parse_airlines(airlines_str):
+    """Parse comma-separated airline codes into Airline enums."""
+    if not airlines_str:
+        return None
+    codes = [c.strip().upper() for c in airlines_str.split(",")]
+    result = []
+    for code in codes:
+        try:
+            result.append(Airline[code])
+        except KeyError:
+            pass
+    return result or None
+
+
+def _build_time_restrictions(
+    earliest_departure=None, latest_departure=None,
+    earliest_arrival=None, latest_arrival=None,
+):
+    """Build TimeRestrictions if any time params are set."""
+    if any(v is not None for v in [earliest_departure, latest_departure, earliest_arrival, latest_arrival]):
+        return TimeRestrictions(
+            earliest_departure=earliest_departure,
+            latest_departure=latest_departure,
+            earliest_arrival=earliest_arrival,
+            latest_arrival=latest_arrival,
+        )
+    return None
+
+
+def _build_filters(
+    orig_code, dest_code, date, return_date=None, cabin="ECONOMY", stops="ANY",
+    adults=1, children=0, infants_in_seat=0, infants_on_lap=0,
+    airlines=None, max_price=None, max_duration=None,
+    earliest_departure=None, latest_departure=None,
+    earliest_arrival=None, latest_arrival=None,
+    max_layover_duration=None, sort_by=None,
+):
     origin = Airport[orig_code]
     destination = Airport[dest_code]
-    segments = [FlightSegment(departure_airport=[[origin, 0]], arrival_airport=[[destination, 0]], travel_date=date)]
+
+    time_restrictions = _build_time_restrictions(
+        earliest_departure, latest_departure, earliest_arrival, latest_arrival,
+    )
+
+    segments = [FlightSegment(
+        departure_airport=[[origin, 0]],
+        arrival_airport=[[destination, 0]],
+        travel_date=date,
+        time_restrictions=time_restrictions,
+    )]
     trip_type = TripType.ONE_WAY
     if return_date:
-        segments.append(FlightSegment(departure_airport=[[destination, 0]], arrival_airport=[[origin, 0]], travel_date=return_date))
+        segments.append(FlightSegment(
+            departure_airport=[[destination, 0]],
+            arrival_airport=[[origin, 0]],
+            travel_date=return_date,
+            time_restrictions=time_restrictions,
+        ))
         trip_type = TripType.ROUND_TRIP
+
+    price_limit = PriceLimit(max_price=max_price) if max_price else None
+    layover = LayoverRestrictions(max_duration=max_layover_duration) if max_layover_duration else None
+
     return FlightSearchFilters(
         trip_type=trip_type,
-        passenger_info=PassengerInfo(adults=1),
+        passenger_info=PassengerInfo(
+            adults=adults, children=children,
+            infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
+        ),
         flight_segments=segments,
         seat_type=SEAT_MAP.get(cabin, SeatType.ECONOMY),
         stops=STOPS_MAP.get(stops, MaxStops.ANY),
+        airlines=_parse_airlines(airlines),
+        price_limit=price_limit,
+        max_duration=max_duration,
+        layover_restrictions=layover,
+        sort_by=SORT_MAP.get(sort_by, SortBy.NONE),
     )
 
 
@@ -110,6 +188,19 @@ def search_flights(
     cabin: str = "ECONOMY",
     stops: str = "ANY",
     results: int = 5,
+    adults: int = 1,
+    children: int = 0,
+    infants_in_seat: int = 0,
+    infants_on_lap: int = 0,
+    airlines: str | None = None,
+    max_price: int | None = None,
+    max_duration: int | None = None,
+    earliest_departure: int | None = None,
+    latest_departure: int | None = None,
+    earliest_arrival: int | None = None,
+    latest_arrival: int | None = None,
+    max_layover_duration: int | None = None,
+    sort_by: str | None = None,
 ) -> str:
     """Search Google Flights for prices on a route.
 
@@ -122,6 +213,19 @@ def search_flights(
         cabin: ECONOMY, PREMIUM_ECONOMY, BUSINESS, or FIRST
         stops: ANY, NON_STOP, ONE_STOP, or TWO_STOPS
         results: Number of results per search (default 5)
+        adults: Number of adult passengers (default 1)
+        children: Number of child passengers (default 0)
+        infants_in_seat: Number of infants in seat (default 0)
+        infants_on_lap: Number of infants on lap (default 0)
+        airlines: Filter to specific airlines, comma-separated IATA codes (e.g. BA,AA,DL)
+        max_price: Maximum price in USD
+        max_duration: Maximum total flight duration in minutes
+        earliest_departure: Earliest departure hour 0-23 (e.g. 8 for 8am)
+        latest_departure: Latest departure hour 1-23 (e.g. 20 for 8pm)
+        earliest_arrival: Earliest arrival hour 0-23
+        latest_arrival: Latest arrival hour 1-23
+        max_layover_duration: Maximum layover time in minutes
+        sort_by: Sort results by BEST, CHEAPEST, DEPARTURE, ARRIVAL, or DURATION
     """
     combos = _expand_routes(origin, destination, date, date_to)
     output = []
@@ -129,7 +233,14 @@ def search_flights(
 
     for orig_code, dest_code, d in combos:
         try:
-            filters = _build_filters(orig_code, dest_code, d, return_date, cabin, stops)
+            filters = _build_filters(
+                orig_code, dest_code, d, return_date, cabin, stops,
+                adults, children, infants_in_seat, infants_on_lap,
+                airlines, max_price, max_duration,
+                earliest_departure, latest_departure,
+                earliest_arrival, latest_arrival,
+                max_layover_duration, sort_by,
+            )
         except KeyError as e:
             output.append(f"Unknown airport code: {e}")
             continue
@@ -161,6 +272,112 @@ def search_flights(
 
 
 @mcp.tool()
+def search_dates(
+    origin: str,
+    destination: str,
+    from_date: str,
+    to_date: str,
+    return_date: str | None = None,
+    trip_duration: int | None = None,
+    cabin: str = "ECONOMY",
+    stops: str = "ANY",
+    adults: int = 1,
+    children: int = 0,
+    infants_in_seat: int = 0,
+    infants_on_lap: int = 0,
+    airlines: str | None = None,
+    max_price: int | None = None,
+    max_duration: int | None = None,
+) -> str:
+    """Find the cheapest dates to fly across a date range (calendar view).
+
+    Args:
+        origin: Origin IATA code (e.g. LHR)
+        destination: Destination IATA code (e.g. JFK)
+        from_date: Start of date range (YYYY-MM-DD)
+        to_date: End of date range (YYYY-MM-DD)
+        return_date: Return date for round trips (YYYY-MM-DD). Use trip_duration instead for flexible returns.
+        trip_duration: Number of days between outbound and return (e.g. 7 for a week). Makes this a round-trip search.
+        cabin: ECONOMY, PREMIUM_ECONOMY, BUSINESS, or FIRST
+        stops: ANY, NON_STOP, ONE_STOP, or TWO_STOPS
+        adults: Number of adult passengers (default 1)
+        children: Number of child passengers (default 0)
+        infants_in_seat: Number of infants in seat (default 0)
+        infants_on_lap: Number of infants on lap (default 0)
+        airlines: Filter to specific airlines, comma-separated IATA codes (e.g. BA,AA,DL)
+        max_price: Maximum price in USD
+        max_duration: Maximum total flight duration in minutes
+    """
+    try:
+        orig = Airport[origin.strip().upper()]
+        dest = Airport[destination.strip().upper()]
+    except KeyError as e:
+        return f"Unknown airport code: {e}"
+
+    is_round_trip = return_date is not None or trip_duration is not None
+    trip_type = TripType.ROUND_TRIP if is_round_trip else TripType.ONE_WAY
+
+    # For round trip with fixed return_date, calculate duration
+    duration = trip_duration
+    if return_date and not trip_duration:
+        d1 = datetime.strptime(from_date, "%Y-%m-%d").date()
+        d2 = datetime.strptime(return_date, "%Y-%m-%d").date()
+        duration = (d2 - d1).days
+
+    segments = [FlightSegment(
+        departure_airport=[[orig, 0]],
+        arrival_airport=[[dest, 0]],
+        travel_date=from_date,
+    )]
+    if is_round_trip:
+        ret_date = return_date or (datetime.strptime(from_date, "%Y-%m-%d") + timedelta(days=duration)).strftime("%Y-%m-%d")
+        segments.append(FlightSegment(
+            departure_airport=[[dest, 0]],
+            arrival_airport=[[orig, 0]],
+            travel_date=ret_date,
+        ))
+
+    price_limit = PriceLimit(max_price=max_price) if max_price else None
+
+    filters = DateSearchFilters(
+        trip_type=trip_type,
+        passenger_info=PassengerInfo(
+            adults=adults, children=children,
+            infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
+        ),
+        flight_segments=segments,
+        seat_type=SEAT_MAP.get(cabin, SeatType.ECONOMY),
+        stops=STOPS_MAP.get(stops, MaxStops.ANY),
+        airlines=_parse_airlines(airlines),
+        price_limit=price_limit,
+        max_duration=max_duration,
+        from_date=from_date,
+        to_date=to_date,
+        duration=duration,
+    )
+
+    searcher = SearchDates()
+    results = searcher.search(filters)
+
+    if not results:
+        return f"No prices found for {origin} -> {destination} between {from_date} and {to_date}"
+
+    # Sort by price
+    results.sort(key=lambda r: r.price)
+
+    output = [f"{origin} -> {destination} cheapest dates ({cabin}):"]
+    for r in results:
+        if isinstance(r.date, tuple) and len(r.date) == 2:
+            output.append(f"  {r.date[0].strftime('%Y-%m-%d')} -> {r.date[1].strftime('%Y-%m-%d')}: ${r.price:,.0f}")
+        else:
+            d = r.date[0] if isinstance(r.date, tuple) else r.date
+            output.append(f"  {d.strftime('%Y-%m-%d')}: ${r.price:,.0f}")
+
+    output.append(f"\n{len(results)} date(s) found. Cheapest: ${results[0].price:,.0f}")
+    return "\n".join(output)
+
+
+@mcp.tool()
 def track_flight(
     origin: str,
     destination: str,
@@ -170,6 +387,13 @@ def track_flight(
     cabin: str = "ECONOMY",
     stops: str = "ANY",
     target_price: float | None = None,
+    adults: int = 1,
+    children: int = 0,
+    infants_in_seat: int = 0,
+    infants_on_lap: int = 0,
+    airlines: str | None = None,
+    max_price: int | None = None,
+    max_duration: int | None = None,
 ) -> str:
     """Add a flight route to price tracking. Records current price and monitors for drops.
 
@@ -182,6 +406,13 @@ def track_flight(
         cabin: ECONOMY, PREMIUM_ECONOMY, BUSINESS, or FIRST
         stops: ANY, NON_STOP, ONE_STOP, or TWO_STOPS
         target_price: Alert when price drops below this amount
+        adults: Number of adult passengers (default 1)
+        children: Number of child passengers (default 0)
+        infants_in_seat: Number of infants in seat (default 0)
+        infants_on_lap: Number of infants on lap (default 0)
+        airlines: Filter to specific airlines, comma-separated IATA codes (e.g. BA,AA,DL)
+        max_price: Maximum price in USD
+        max_duration: Maximum total flight duration in minutes
     """
     combos = _expand_routes(origin, destination, date, date_to)
     tracked = _load_tracked()
@@ -200,7 +431,11 @@ def track_flight(
             continue
 
         try:
-            filters = _build_filters(orig_code, dest_code, d, return_date, cabin, stops)
+            filters = _build_filters(
+                orig_code, dest_code, d, return_date, cabin, stops,
+                adults, children, infants_in_seat, infants_on_lap,
+                airlines, max_price, max_duration,
+            )
         except KeyError as e:
             output.append(f"Unknown airport code: {e}")
             continue
