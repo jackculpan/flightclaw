@@ -63,42 +63,66 @@ def _raw_search(filters):
     return json.loads(parsed)
 
 
+def _extract_booking_token(item):
+    """Extract booking token from item[8] (flight detail protobuf for tfs URL param)."""
+    try:
+        if len(item) > 8 and isinstance(item[8], str):
+            parsed = json.loads(item[8])
+            if isinstance(parsed, list) and parsed:
+                return parsed[0]
+    except Exception:
+        pass
+    return None
+
+
 def search_with_currency(filters: FlightSearchFilters, top_n: int = 5):
     """Search flights and detect currency from the raw API response.
 
-    Returns (results, currency_code) where currency_code is e.g. 'THB', 'USD', 'GBP'.
+    Returns (results, currency_code) where:
+    - results is a list of (flight_or_pair, booking_token) tuples
+    - booking_token is the tfs protobuf for Google Flights booking URLs
+    - currency_code is e.g. 'THB', 'USD', 'GBP'
     Makes a single API call.
     """
     data = _raw_search(filters)
     if data is None:
         return None, "USD"
 
-    # Extract currency from first flight's booking token
+    # Extract currency and booking tokens from flights
     currency = None
     flights_data = []
+    booking_tokens = []
     for i in [2, 3]:
         if i < len(data) and isinstance(data[i], list):
             for item in data[i][0]:
                 flights_data.append(item)
+                # Extract currency from item[1][1]
                 if currency is None and len(item[1]) > 1 and isinstance(item[1][1], str):
                     currency = _extract_currency(item[1][1])
+                # Extract booking token from item[8] (flight detail protobuf)
+                booking_tokens.append(_extract_booking_token(item))
 
     # Parse flights using fli's parser
     results = [SearchFlights._parse_flights_data(flight) for flight in flights_data]
 
     if filters.trip_type == TripType.ONE_WAY or filters.flight_segments[0].selected_flight is not None:
-        return results, currency or "USD"
+        paired = list(zip(results, booking_tokens))
+        return paired, currency or "USD"
 
-    # Round-trip: get return flights
+    # Round-trip: get return flights with tokens via raw API
     flight_pairs = []
-    searcher = SearchFlights()
     for selected_flight in results[:top_n]:
         selected_filters = deepcopy(filters)
         selected_filters.flight_segments[0].selected_flight = selected_flight
-        return_flights = searcher.search(selected_filters, top_n=top_n)
-        if return_flights is not None:
-            flight_pairs.extend(
-                (selected_flight, ret) for ret in return_flights
-            )
+        return_data = _raw_search(selected_filters)
+        if return_data is None:
+            continue
+        for ri in [2, 3]:
+            if ri < len(return_data) and isinstance(return_data[ri], list):
+                for item in return_data[ri][0]:
+                    ret_flight = SearchFlights._parse_flights_data(item)
+                    flight_pairs.append(
+                        ((selected_flight, ret_flight), _extract_booking_token(item))
+                    )
 
     return flight_pairs, currency or "USD"
