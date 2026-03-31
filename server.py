@@ -7,24 +7,21 @@ import sys
 import urllib.parse
 from datetime import datetime, timedelta
 
-from mcp.server.fastmcp import FastMCP
-
 # Add scripts dir to path so we can import search_utils
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-from fli.models import (
-    Airport,
-    DateSearchFilters,
-    FlightSearchFilters,
-    FlightSegment,
-    PassengerInfo,
-    SeatType,
-    TripType,
+from fli.core import (
+    build_date_search_segments,
+    parse_airlines as fli_parse_airlines,
+    parse_cabin_class,
+    parse_max_stops,
+    resolve_airport,
 )
-from fli.search import SearchDates
+from fli.core.parsers import ParseError
+from fli.mcp.server import FliMCP
+from fli.models import DateSearchFilters, PassengerInfo, PriceLimit
+
 from helpers import (
-    SEAT_MAP,
-    STOPS_MAP,
     build_filters,
     expand_routes,
     format_duration,
@@ -34,7 +31,7 @@ from helpers import (
 from search_utils import fmt_price, search_with_currency
 from tracking import register_tracking_tools
 
-mcp = FastMCP("flightclaw")
+mcp = FliMCP("flightclaw")
 
 BOOKING_BASE_URL = "https://www.google.com/travel/flights/booking?tfs="
 
@@ -102,8 +99,8 @@ def search_flights(
                 earliest_arrival, latest_arrival,
                 max_layover_duration, sort_by,
             )
-        except KeyError as e:
-            output.append(f"Unknown airport code: {e}")
+        except (KeyError, ParseError) as e:
+            output.append(f"Invalid parameter: {e}")
             continue
 
         search_results, currency = search_with_currency(filters, top_n=results)
@@ -174,13 +171,12 @@ def search_dates(
         max_duration: Maximum total flight duration in minutes
     """
     try:
-        orig = Airport[origin.strip().upper()]
-        dest = Airport[destination.strip().upper()]
-    except KeyError as e:
-        return f"Unknown airport code: {e}"
+        orig = resolve_airport(origin.strip())
+        dest = resolve_airport(destination.strip())
+    except ParseError as e:
+        return str(e)
 
     is_round_trip = return_date is not None or trip_duration is not None
-    trip_type = TripType.ROUND_TRIP if is_round_trip else TripType.ONE_WAY
 
     duration = trip_duration
     if return_date and not trip_duration:
@@ -188,21 +184,17 @@ def search_dates(
         d2 = datetime.strptime(return_date, "%Y-%m-%d").date()
         duration = (d2 - d1).days
 
-    segments = [FlightSegment(
-        departure_airport=[[orig, 0]],
-        arrival_airport=[[dest, 0]],
-        travel_date=from_date,
-    )]
-    if is_round_trip:
-        ret_date = return_date or (datetime.strptime(from_date, "%Y-%m-%d") + timedelta(days=duration)).strftime("%Y-%m-%d")
-        segments.append(FlightSegment(
-            departure_airport=[[dest, 0]],
-            arrival_airport=[[orig, 0]],
-            travel_date=ret_date,
-        ))
+    segments, trip_type = build_date_search_segments(
+        origin=orig,
+        destination=dest,
+        start_date=from_date,
+        trip_duration=duration,
+        is_round_trip=is_round_trip,
+    )
 
-    from fli.models import PriceLimit
     price_limit = PriceLimit(max_price=max_price) if max_price else None
+
+    from fli.search import SearchDates
 
     filters = DateSearchFilters(
         trip_type=trip_type,
@@ -211,8 +203,8 @@ def search_dates(
             infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
         ),
         flight_segments=segments,
-        seat_type=SEAT_MAP.get(cabin, SeatType.ECONOMY),
-        stops=STOPS_MAP.get(stops),
+        seat_type=parse_cabin_class(cabin),
+        stops=parse_max_stops(stops),
         airlines=parse_airlines(airlines),
         price_limit=price_limit,
         max_duration=max_duration,
@@ -290,6 +282,16 @@ def book_flight(
 
 # Register tracking tools on our mcp instance
 register_tracking_tools(mcp)
+
+# Register Duffel tools if API wrapper is configured
+from duffel_api import is_configured as duffel_configured
+if duffel_configured():
+    from duffel_tools import register_duffel_tools
+    register_duffel_tools(mcp)
+
+
+from passenger_profiles import register_passenger_tools
+register_passenger_tools(mcp)
 
 
 if __name__ == "__main__":

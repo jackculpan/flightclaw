@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from fli.core.parsers import ParseError
+
 from helpers import (
     build_filters,
     expand_routes,
@@ -73,8 +75,8 @@ def register_tracking_tools(mcp):
                     adults, children, infants_in_seat, infants_on_lap,
                     airlines, max_price, max_duration,
                 )
-            except KeyError as e:
-                output.append(f"Unknown airport code: {e}")
+            except (KeyError, ParseError) as e:
+                output.append(f"Invalid parameter: {e}")
                 continue
 
             results, currency = search_with_currency(filters, top_n=1)

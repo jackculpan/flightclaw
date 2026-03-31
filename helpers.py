@@ -5,43 +5,25 @@ import os
 from datetime import datetime, timedelta
 from itertools import product
 
+from fli.core import (
+    build_flight_segments,
+    build_time_restrictions,
+    parse_airlines as fli_parse_airlines,
+    parse_cabin_class,
+    parse_max_stops,
+    parse_sort_by,
+    resolve_airport,
+)
+from fli.core.parsers import ParseError
 from fli.models import (
-    Airport,
     FlightSearchFilters,
-    FlightSegment,
     LayoverRestrictions,
-    MaxStops,
     PassengerInfo,
     PriceLimit,
-    SeatType,
     SortBy,
-    TimeRestrictions,
-    TripType,
 )
-from fli.models.google_flights.base import Airline
+
 from search_utils import fmt_price
-
-SEAT_MAP = {
-    "ECONOMY": SeatType.ECONOMY,
-    "PREMIUM_ECONOMY": SeatType.PREMIUM_ECONOMY,
-    "BUSINESS": SeatType.BUSINESS,
-    "FIRST": SeatType.FIRST,
-}
-
-STOPS_MAP = {
-    "ANY": MaxStops.ANY,
-    "NON_STOP": MaxStops.NON_STOP,
-    "ONE_STOP": MaxStops.ONE_STOP_OR_FEWER,
-    "TWO_STOPS": MaxStops.TWO_OR_FEWER_STOPS,
-}
-
-SORT_MAP = {
-    "BEST": SortBy.TOP_FLIGHTS,
-    "CHEAPEST": SortBy.CHEAPEST,
-    "DEPARTURE": SortBy.DEPARTURE_TIME,
-    "ARRIVAL": SortBy.ARRIVAL_TIME,
-    "DURATION": SortBy.DURATION,
-}
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 TRACKED_FILE = os.path.join(DATA_DIR, "tracked.json")
@@ -74,30 +56,32 @@ def expand_routes(origins_str, destinations_str, date_str, date_to_str=None):
 
 
 def parse_airlines(airlines_str):
-    """Parse comma-separated airline codes into Airline enums."""
+    """Parse comma-separated airline codes string into Airline enums."""
     if not airlines_str:
         return None
     codes = [c.strip().upper() for c in airlines_str.split(",")]
-    result = []
-    for code in codes:
-        try:
-            result.append(Airline[code])
-        except KeyError:
-            pass
-    return result or None
+    try:
+        return fli_parse_airlines(codes)
+    except ParseError:
+        # Silently skip invalid codes for backwards compat
+        from fli.models import Airline
+        result = []
+        for code in codes:
+            try:
+                result.append(getattr(Airline, code))
+            except AttributeError:
+                pass
+        return result or None
 
 
-def build_time_restrictions(
-    earliest_departure=None, latest_departure=None,
-    earliest_arrival=None, latest_arrival=None,
-):
-    if any(v is not None for v in [earliest_departure, latest_departure, earliest_arrival, latest_arrival]):
-        return TimeRestrictions(
-            earliest_departure=earliest_departure,
-            latest_departure=latest_departure,
-            earliest_arrival=earliest_arrival,
-            latest_arrival=latest_arrival,
-        )
+def _build_departure_window(earliest_departure, latest_departure):
+    """Convert individual hour ints to 'HH-HH' window string."""
+    if earliest_departure is not None and latest_departure is not None:
+        return f"{earliest_departure}-{latest_departure}"
+    if earliest_departure is not None:
+        return f"{earliest_departure}-23"
+    if latest_departure is not None:
+        return f"0-{latest_departure}"
     return None
 
 
@@ -109,28 +93,20 @@ def build_filters(
     earliest_arrival=None, latest_arrival=None,
     max_layover_duration=None, sort_by=None,
 ):
-    origin = Airport[orig_code]
-    destination = Airport[dest_code]
+    origin = resolve_airport(orig_code)
+    destination = resolve_airport(dest_code)
 
-    time_restrictions = build_time_restrictions(
-        earliest_departure, latest_departure, earliest_arrival, latest_arrival,
-    )
+    dep_window = _build_departure_window(earliest_departure, latest_departure)
+    arr_window = _build_departure_window(earliest_arrival, latest_arrival)
+    time_restrictions = build_time_restrictions(dep_window, arr_window)
 
-    segments = [FlightSegment(
-        departure_airport=[[origin, 0]],
-        arrival_airport=[[destination, 0]],
-        travel_date=date,
+    segments, trip_type = build_flight_segments(
+        origin=origin,
+        destination=destination,
+        departure_date=date,
+        return_date=return_date,
         time_restrictions=time_restrictions,
-    )]
-    trip_type = TripType.ONE_WAY
-    if return_date:
-        segments.append(FlightSegment(
-            departure_airport=[[destination, 0]],
-            arrival_airport=[[origin, 0]],
-            travel_date=return_date,
-            time_restrictions=time_restrictions,
-        ))
-        trip_type = TripType.ROUND_TRIP
+    )
 
     price_limit = PriceLimit(max_price=max_price) if max_price else None
     layover = LayoverRestrictions(max_duration=max_layover_duration) if max_layover_duration else None
@@ -142,13 +118,13 @@ def build_filters(
             infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
         ),
         flight_segments=segments,
-        seat_type=SEAT_MAP.get(cabin, SeatType.ECONOMY),
-        stops=STOPS_MAP.get(stops, MaxStops.ANY),
+        seat_type=parse_cabin_class(cabin),
+        stops=parse_max_stops(stops),
         airlines=parse_airlines(airlines),
         price_limit=price_limit,
         max_duration=max_duration,
         layover_restrictions=layover,
-        sort_by=SORT_MAP.get(sort_by, SortBy.NONE),
+        sort_by=parse_sort_by(sort_by) if sort_by else SortBy.NONE,
     )
 
 
