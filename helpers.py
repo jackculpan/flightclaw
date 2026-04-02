@@ -6,16 +6,20 @@ from datetime import datetime, timedelta
 from itertools import product
 
 from fli.core import (
+    build_date_search_segments,
     build_flight_segments,
     build_time_restrictions,
     parse_airlines as fli_parse_airlines,
     parse_cabin_class,
+    parse_emissions,
     parse_max_stops,
     parse_sort_by,
     resolve_airport,
 )
 from fli.core.parsers import ParseError
 from fli.models import (
+    BagsFilter,
+    DateSearchFilters,
     FlightSearchFilters,
     LayoverRestrictions,
     PassengerInfo,
@@ -92,6 +96,8 @@ def build_filters(
     earliest_departure=None, latest_departure=None,
     earliest_arrival=None, latest_arrival=None,
     max_layover_duration=None, sort_by=None,
+    exclude_basic_economy=False, emissions="ALL",
+    checked_bags=0, carry_on=False, show_all_results=True,
 ):
     origin = resolve_airport(orig_code)
     destination = resolve_airport(dest_code)
@@ -110,6 +116,7 @@ def build_filters(
 
     price_limit = PriceLimit(max_price=max_price) if max_price else None
     layover = LayoverRestrictions(max_duration=max_layover_duration) if max_layover_duration else None
+    bags = BagsFilter(checked_bags=checked_bags, carry_on=carry_on) if checked_bags or carry_on else None
 
     return FlightSearchFilters(
         trip_type=trip_type,
@@ -124,7 +131,60 @@ def build_filters(
         price_limit=price_limit,
         max_duration=max_duration,
         layover_restrictions=layover,
-        sort_by=parse_sort_by(sort_by) if sort_by else SortBy.NONE,
+        sort_by=parse_sort_by(sort_by) if sort_by else SortBy.BEST,
+        exclude_basic_economy=exclude_basic_economy,
+        emissions=parse_emissions(emissions),
+        bags=bags,
+        show_all_results=show_all_results,
+    )
+
+
+def build_date_filters(
+    orig_code, dest_code, from_date, to_date,
+    duration=None, is_round_trip=False,
+    cabin="ECONOMY", stops="ANY",
+    adults=1, children=0, infants_in_seat=0, infants_on_lap=0,
+    airlines=None, max_price=None, max_duration=None,
+    earliest_departure=None, latest_departure=None,
+    earliest_arrival=None, latest_arrival=None,
+    emissions="ALL", checked_bags=0, carry_on=False,
+):
+    origin = resolve_airport(orig_code)
+    destination = resolve_airport(dest_code)
+
+    dep_window = _build_departure_window(earliest_departure, latest_departure)
+    arr_window = _build_departure_window(earliest_arrival, latest_arrival)
+    time_restrictions = build_time_restrictions(dep_window, arr_window)
+
+    segments, trip_type = build_date_search_segments(
+        origin=origin,
+        destination=destination,
+        start_date=from_date,
+        trip_duration=duration,
+        is_round_trip=is_round_trip,
+        time_restrictions=time_restrictions,
+    )
+
+    price_limit = PriceLimit(max_price=max_price) if max_price else None
+    bags = BagsFilter(checked_bags=checked_bags, carry_on=carry_on) if checked_bags or carry_on else None
+
+    return DateSearchFilters(
+        trip_type=trip_type,
+        passenger_info=PassengerInfo(
+            adults=adults, children=children,
+            infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
+        ),
+        flight_segments=segments,
+        seat_type=parse_cabin_class(cabin),
+        stops=parse_max_stops(stops),
+        airlines=parse_airlines(airlines),
+        price_limit=price_limit,
+        max_duration=max_duration,
+        emissions=parse_emissions(emissions),
+        bags=bags,
+        from_date=from_date,
+        to_date=to_date,
+        duration=duration,
     )
 
 
@@ -134,8 +194,10 @@ def format_duration(minutes):
 
 
 def format_flight(flight, currency, index=None):
+    cur = getattr(flight, "currency", None) or currency
     prefix = f"Option {index}: " if index else ""
-    lines = [f"{prefix}{fmt_price(flight.price, currency)} | {format_duration(flight.duration)} | {flight.stops} stop(s)"]
+    lines = [f"{prefix}{fmt_price(flight.price, cur)} | {format_duration(flight.duration)} | {flight.stops} stop(s)"]
     for leg in flight.legs:
-        lines.append(f"  {leg.airline.name} {leg.flight_number}: {leg.departure_airport.name} {leg.departure_datetime.strftime('%H:%M')} -> {leg.arrival_airport.name} {leg.arrival_datetime.strftime('%H:%M')}")
+        airline_code = leg.airline.name.lstrip("_")
+        lines.append(f"  {airline_code} {leg.flight_number}: {leg.departure_airport.name} {leg.departure_datetime.strftime('%H:%M')} -> {leg.arrival_airport.name} {leg.arrival_datetime.strftime('%H:%M')}")
     return "\n".join(lines)
