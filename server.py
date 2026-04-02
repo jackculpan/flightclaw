@@ -51,6 +51,11 @@ def search_flights(
     latest_arrival: int | None = None,
     max_layover_duration: int | None = None,
     sort_by: str | None = None,
+    exclude_basic_economy: bool = False,
+    emissions: str = "ALL",
+    checked_bags: int = 0,
+    carry_on: bool = False,
+    show_all_results: bool = True,
 ) -> str:
     """Search Google Flights for prices on a route. Returns booking links for each result.
 
@@ -75,7 +80,12 @@ def search_flights(
         earliest_arrival: Earliest arrival hour 0-23
         latest_arrival: Latest arrival hour 1-23
         max_layover_duration: Maximum layover time in minutes
-        sort_by: Sort results by BEST, CHEAPEST, DEPARTURE, ARRIVAL, or DURATION
+        sort_by: Sort by TOP_FLIGHTS, BEST, CHEAPEST, DEPARTURE_TIME, ARRIVAL_TIME, DURATION, or EMISSIONS
+        exclude_basic_economy: Exclude basic economy fares from results (default false)
+        emissions: Filter by emissions: ALL or LESS (default ALL)
+        checked_bags: Include checked bag fees in price, 0-2 bags (default 0)
+        carry_on: Include carry-on bag fee in price (default false)
+        show_all_results: Return all results instead of curated top ~30 (default true)
     """
     combos = expand_routes(origin, destination, date, date_to)
     output = []
@@ -90,6 +100,11 @@ def search_flights(
                 earliest_departure, latest_departure,
                 earliest_arrival, latest_arrival,
                 max_layover_duration, sort_by,
+                exclude_basic_economy=exclude_basic_economy,
+                emissions=emissions,
+                checked_bags=checked_bags,
+                carry_on=carry_on,
+                show_all_results=show_all_results,
             )
         except (KeyError, ParseError) as e:
             output.append(f"Invalid parameter: {e}")
@@ -146,6 +161,9 @@ def search_dates(
     latest_departure: int | None = None,
     earliest_arrival: int | None = None,
     latest_arrival: int | None = None,
+    emissions: str = "ALL",
+    checked_bags: int = 0,
+    carry_on: bool = False,
 ) -> str:
     """Find the cheapest dates to fly across a date range (calendar view).
 
@@ -169,6 +187,9 @@ def search_dates(
         latest_departure: Latest departure hour 1-23 (e.g. 20 for 8pm)
         earliest_arrival: Earliest arrival hour 0-23
         latest_arrival: Latest arrival hour 1-23
+        emissions: Filter by emissions: ALL or LESS (default ALL)
+        checked_bags: Include checked bag fees in price, 0-2 bags (default 0)
+        carry_on: Include carry-on bag fee in price (default false)
     """
     is_round_trip = return_date is not None or trip_duration is not None
 
@@ -189,6 +210,7 @@ def search_dates(
             airlines=airlines, max_price=max_price, max_duration=max_duration,
             earliest_departure=earliest_departure, latest_departure=latest_departure,
             earliest_arrival=earliest_arrival, latest_arrival=latest_arrival,
+            emissions=emissions, checked_bags=checked_bags, carry_on=carry_on,
         )
     except (KeyError, ParseError) as e:
         return f"Invalid parameter: {e}"
@@ -203,15 +225,19 @@ def search_dates(
 
     date_results.sort(key=lambda r: r.price)
 
-    output = [f"{origin} -> {destination} cheapest dates ({cabin}):"]
+    # Use currency from first result if available
+    currency = getattr(date_results[0], "currency", None) or "USD"
+
+    output = [f"{origin} -> {destination} cheapest dates ({cabin}, {currency}):"]
     for r in date_results:
+        cur = getattr(r, "currency", None) or currency
         if isinstance(r.date, tuple) and len(r.date) == 2:
-            output.append(f"  {r.date[0].strftime('%Y-%m-%d')} -> {r.date[1].strftime('%Y-%m-%d')}: ${r.price:,.0f}")
+            output.append(f"  {r.date[0].strftime('%Y-%m-%d')} -> {r.date[1].strftime('%Y-%m-%d')}: {fmt_price(r.price, cur)}")
         else:
             d = r.date[0] if isinstance(r.date, tuple) else r.date
-            output.append(f"  {d.strftime('%Y-%m-%d')}: ${r.price:,.0f}")
+            output.append(f"  {d.strftime('%Y-%m-%d')}: {fmt_price(r.price, cur)}")
 
-    output.append(f"\n{len(date_results)} date(s) found. Cheapest: ${date_results[0].price:,.0f}")
+    output.append(f"\n{len(date_results)} date(s) found. Cheapest: {fmt_price(date_results[0].price, currency)}")
     return "\n".join(output)
 
 
