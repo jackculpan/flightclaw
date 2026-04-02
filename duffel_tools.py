@@ -16,7 +16,7 @@ from duffel_fmt import (
 def register_duffel_tools(mcp):
     """Register all Duffel tools on the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_search_flights(
         origin: str,
         destination: str,
@@ -72,7 +72,7 @@ def register_duffel_tools(mcp):
         output.append("Use duffel_book_flight with an offer ID to book.")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_search_multi_city(
         slices: str,
         cabin: str = "ECONOMY",
@@ -135,7 +135,7 @@ def register_duffel_tools(mcp):
         output.append("Use duffel_book_flight with an offer ID to book.")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_get_offer(offer_id: str) -> str:
         """Get offer details including conditions and available extras.
 
@@ -164,7 +164,7 @@ def register_duffel_tools(mcp):
 
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_get_seat_map(offer_id: str) -> str:
         """Get seat map with available seats and prices.
 
@@ -209,7 +209,7 @@ def register_duffel_tools(mcp):
         output.append("Pass seat service IDs to duffel_book_flight via services parameter.")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": False})
     def duffel_book_flight(
         offer_id: str,
         passengers: str,
@@ -255,7 +255,7 @@ def register_duffel_tools(mcp):
         upsert_order(order)
         return "Flight booked!\n\n" + fmt_order(order)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True})
     def duffel_list_orders() -> str:
         """List all Duffel orders stored locally."""
         orders = load_orders()
@@ -265,7 +265,7 @@ def register_duffel_tools(mcp):
         output.append(f"\n{len(orders)} order(s).")
         return "\n\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_get_order(order_id: str) -> str:
         """Get live order status from Duffel.
 
@@ -278,7 +278,7 @@ def register_duffel_tools(mcp):
         upsert_order(order)
         return fmt_order(order)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": False})
     def duffel_request_change(
         order_id: str,
         new_date: str,
@@ -349,7 +349,7 @@ def register_duffel_tools(mcp):
         output.append(f"{len(offers)} option(s). Use duffel_confirm_change with a change_offer_id.")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": False})
     def duffel_confirm_change(
         change_offer_id: str,
         payment_type: str = "balance",
@@ -382,7 +382,7 @@ def register_duffel_tools(mcp):
         lines.append("\nUse duffel_get_order to see updated details.")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"destructiveHint": True})
     def duffel_cancel_order(order_id: str) -> str:
         """Request cancellation quote. Shows refund before confirming.
 
@@ -402,7 +402,7 @@ def register_duffel_tools(mcp):
         ]
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"destructiveHint": True, "idempotentHint": False})
     def duffel_confirm_cancel(cancellation_id: str) -> str:
         """Confirm cancellation. Irreversible.
 
@@ -418,7 +418,7 @@ def register_duffel_tools(mcp):
             f"Refund: {result.get('refund_currency')} {result.get('refund_amount')}"
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": False})
     def duffel_create_checkout(
         offer_id: str,
         passengers: str,
@@ -476,7 +476,7 @@ def register_duffel_tools(mcp):
             f"Send this URL to the passenger to complete card payment."
         )
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
     def duffel_check_alerts(order_id: str | None = None) -> str:
         """Check for airline-initiated changes or updates on orders.
 

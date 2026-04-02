@@ -16,7 +16,7 @@ from search_utils import fmt_price, search_with_currency
 def register_tracking_tools(mcp):
     """Register all tracking tools on the given MCP server instance."""
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": True})
     def track_flight(
         origin: str,
         destination: str,
@@ -124,7 +124,7 @@ def register_tracking_tools(mcp):
         output.append(summary)
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": True})
     def check_prices(threshold: float = 10.0) -> str:
         """Check all tracked flights for price changes and generate alerts.
 
@@ -195,7 +195,7 @@ def register_tracking_tools(mcp):
 
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True})
     def list_tracked() -> str:
         """List all tracked flights with current prices and history summary."""
         tracked = load_tracked()
@@ -236,7 +236,7 @@ def register_tracking_tools(mcp):
         output.append(f"\n{len(tracked)} flight(s) tracked.")
         return "\n".join(output)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"destructiveHint": True, "idempotentHint": True})
     def remove_tracked(route_id: str) -> str:
         """Remove a flight from the tracking list.
 

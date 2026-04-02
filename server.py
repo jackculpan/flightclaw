@@ -10,23 +10,15 @@ from datetime import datetime, timedelta
 # Add scripts dir to path so we can import search_utils
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-from fli.core import (
-    build_date_search_segments,
-    parse_airlines as fli_parse_airlines,
-    parse_cabin_class,
-    parse_max_stops,
-    resolve_airport,
-)
 from fli.core.parsers import ParseError
 from fli.mcp.server import FliMCP
-from fli.models import DateSearchFilters, PassengerInfo, PriceLimit
 
 from helpers import (
+    build_date_filters,
     build_filters,
     expand_routes,
     format_duration,
     format_flight,
-    parse_airlines,
 )
 from search_utils import fmt_price, search_with_currency
 from tracking import register_tracking_tools
@@ -36,7 +28,7 @@ mcp = FliMCP("flightclaw")
 BOOKING_BASE_URL = "https://www.google.com/travel/flights/booking?tfs="
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
 def search_flights(
     origin: str,
     destination: str,
@@ -133,7 +125,7 @@ def search_flights(
     return "\n".join(output)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
 def search_dates(
     origin: str,
     destination: str,
@@ -150,6 +142,10 @@ def search_dates(
     airlines: str | None = None,
     max_price: int | None = None,
     max_duration: int | None = None,
+    earliest_departure: int | None = None,
+    latest_departure: int | None = None,
+    earliest_arrival: int | None = None,
+    latest_arrival: int | None = None,
 ) -> str:
     """Find the cheapest dates to fly across a date range (calendar view).
 
@@ -169,13 +165,11 @@ def search_dates(
         airlines: Filter to specific airlines, comma-separated IATA codes (e.g. BA,AA,DL)
         max_price: Maximum price in USD
         max_duration: Maximum total flight duration in minutes
+        earliest_departure: Earliest departure hour 0-23 (e.g. 8 for 8am)
+        latest_departure: Latest departure hour 1-23 (e.g. 20 for 8pm)
+        earliest_arrival: Earliest arrival hour 0-23
+        latest_arrival: Latest arrival hour 1-23
     """
-    try:
-        orig = resolve_airport(origin.strip())
-        dest = resolve_airport(destination.strip())
-    except ParseError as e:
-        return str(e)
-
     is_round_trip = return_date is not None or trip_duration is not None
 
     duration = trip_duration
@@ -184,34 +178,22 @@ def search_dates(
         d2 = datetime.strptime(return_date, "%Y-%m-%d").date()
         duration = (d2 - d1).days
 
-    segments, trip_type = build_date_search_segments(
-        origin=orig,
-        destination=dest,
-        start_date=from_date,
-        trip_duration=duration,
-        is_round_trip=is_round_trip,
-    )
-
-    price_limit = PriceLimit(max_price=max_price) if max_price else None
-
-    from fli.search import SearchDates
-
-    filters = DateSearchFilters(
-        trip_type=trip_type,
-        passenger_info=PassengerInfo(
+    try:
+        filters = build_date_filters(
+            origin.strip().upper(), destination.strip().upper(),
+            from_date, to_date,
+            duration=duration, is_round_trip=is_round_trip,
+            cabin=cabin, stops=stops,
             adults=adults, children=children,
             infants_in_seat=infants_in_seat, infants_on_lap=infants_on_lap,
-        ),
-        flight_segments=segments,
-        seat_type=parse_cabin_class(cabin),
-        stops=parse_max_stops(stops),
-        airlines=parse_airlines(airlines),
-        price_limit=price_limit,
-        max_duration=max_duration,
-        from_date=from_date,
-        to_date=to_date,
-        duration=duration,
-    )
+            airlines=airlines, max_price=max_price, max_duration=max_duration,
+            earliest_departure=earliest_departure, latest_departure=latest_departure,
+            earliest_arrival=earliest_arrival, latest_arrival=latest_arrival,
+        )
+    except (KeyError, ParseError) as e:
+        return f"Invalid parameter: {e}"
+
+    from fli.search import SearchDates
 
     searcher = SearchDates()
     date_results = searcher.search(filters)
@@ -233,7 +215,7 @@ def search_dates(
     return "\n".join(output)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
 def book_flight(
     booking_token: str,
     passenger_first_name: str | None = None,
@@ -294,5 +276,156 @@ from passenger_profiles import register_passenger_tools
 register_passenger_tools(mcp)
 
 
+# =============================================================================
+# Prompts
+# =============================================================================
+
+from mcp.types import PromptArgument, PromptMessage, TextContent
+
+mcp.add_prompt(
+    name="search-route",
+    description="Search for flights on a specific route and date.",
+    arguments=[
+        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
+        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
+        PromptArgument(name="date", description="Departure date (YYYY-MM-DD)", required=True),
+        PromptArgument(name="return_date", description="Return date (YYYY-MM-DD)", required=False),
+    ],
+    build_messages=lambda args: [
+        PromptMessage(
+            role="user",
+            content=TextContent(
+                type="text",
+                text=(
+                    f"Search for flights from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
+                    f"on {args.get('date', 'tomorrow')}"
+                    + (f" returning {args['return_date']}" if args.get("return_date") else "")
+                    + ". Show the cheapest options with booking links."
+                ),
+            ),
+        ),
+    ],
+)
+
+mcp.add_prompt(
+    name="find-cheapest-dates",
+    description="Find the cheapest dates to fly on a route within a date range.",
+    arguments=[
+        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
+        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
+        PromptArgument(name="from_date", description="Start of date range (YYYY-MM-DD)", required=True),
+        PromptArgument(name="to_date", description="End of date range (YYYY-MM-DD)", required=True),
+        PromptArgument(name="trip_duration", description="Trip length in days for round trips", required=False),
+    ],
+    build_messages=lambda args: [
+        PromptMessage(
+            role="user",
+            content=TextContent(
+                type="text",
+                text=(
+                    f"Find the cheapest dates to fly from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
+                    f"between {args.get('from_date')} and {args.get('to_date')}"
+                    + (f" with a trip duration of {args['trip_duration']} days" if args.get("trip_duration") else "")
+                    + ". Sort by price and highlight the best deals."
+                ),
+            ),
+        ),
+    ],
+)
+
+mcp.add_prompt(
+    name="track-and-alert",
+    description="Set up price tracking on a route with a target price alert.",
+    arguments=[
+        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
+        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
+        PromptArgument(name="date", description="Departure date (YYYY-MM-DD)", required=True),
+        PromptArgument(name="target_price", description="Target price to alert on", required=False),
+    ],
+    build_messages=lambda args: [
+        PromptMessage(
+            role="user",
+            content=TextContent(
+                type="text",
+                text=(
+                    f"Track the price of flights from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
+                    f"on {args.get('date')}"
+                    + (f" and alert me when the price drops below {args['target_price']}" if args.get("target_price") else "")
+                    + ". Show the current price after setting up tracking."
+                ),
+            ),
+        ),
+    ],
+)
+
+
+# =============================================================================
+# Resources
+# =============================================================================
+
+import json
+from helpers import load_tracked
+
+@mcp.resource(
+    "resource://flightclaw/tracked-flights",
+    name="Tracked Flights",
+    description="All currently tracked flights with price history.",
+    mime_type="application/json",
+)
+def tracked_flights_resource() -> str:
+    tracked = load_tracked()
+    return json.dumps(tracked, indent=2)
+
+
+@mcp.resource(
+    "resource://flightclaw/price-alerts",
+    name="Price Alerts",
+    description="Flights that have hit their target price or dropped significantly.",
+    mime_type="application/json",
+)
+def price_alerts_resource() -> str:
+    tracked = load_tracked()
+    alerts = []
+    for entry in tracked:
+        history = entry.get("price_history", [])
+        if not history:
+            continue
+        current = history[-1].get("best_price")
+        if current is None:
+            continue
+        target = entry.get("target_price")
+        if target and current <= target:
+            alerts.append({
+                "type": "target_reached",
+                "route": f"{entry['origin']} -> {entry['destination']}",
+                "date": entry["date"],
+                "current_price": current,
+                "target_price": target,
+                "currency": entry.get("currency", "USD"),
+            })
+        prices = [p["best_price"] for p in history if p.get("best_price")]
+        if len(prices) >= 2:
+            prev = prices[-2]
+            change_pct = ((current - prev) / prev) * 100
+            if change_pct <= -10:
+                alerts.append({
+                    "type": "price_drop",
+                    "route": f"{entry['origin']} -> {entry['destination']}",
+                    "date": entry["date"],
+                    "current_price": current,
+                    "previous_price": prev,
+                    "change_pct": round(change_pct, 1),
+                    "currency": entry.get("currency", "USD"),
+                })
+    return json.dumps(alerts, indent=2)
+
+
 if __name__ == "__main__":
-    mcp.run()
+    import sys
+
+    if "--http" in sys.argv:
+        host = os.environ.get("HOST", "127.0.0.1")
+        port = int(os.environ.get("PORT", "8000"))
+        mcp.run(transport="http", host=host, port=port)
+    else:
+        mcp.run()

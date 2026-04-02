@@ -23,7 +23,7 @@ def save_passengers(passengers):
 def register_passenger_tools(mcp):
     """Register passenger profile tools on the given MCP server instance."""
 
-    @mcp.tool()
+    @mcp.tool(annotations={"idempotentHint": True})
     def save_passenger(
         name: str,
         given_name: str,
@@ -80,7 +80,7 @@ def register_passenger_tools(mcp):
             save_passengers(passengers)
             return f"Saved new passenger profile '{profile['name']}'."
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True})
     def list_passengers() -> str:
         """List all saved passenger profiles."""
         passengers = load_passengers()
@@ -101,7 +101,7 @@ def register_passenger_tools(mcp):
         lines.append(f"\n{len(passengers)} passenger(s) saved.")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"readOnlyHint": True})
     def get_passenger(name: str) -> str:
         """Get a passenger profile by name. Returns JSON for use with duffel_book_flight.
 
@@ -117,7 +117,7 @@ def register_passenger_tools(mcp):
 
         return json.dumps(profile, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations={"destructiveHint": True, "idempotentHint": True})
     def delete_passenger(name: str) -> str:
         """Delete a saved passenger profile.
 
