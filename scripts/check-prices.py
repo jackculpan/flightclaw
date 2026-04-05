@@ -100,8 +100,13 @@ def check_route(entry):
 
     flights = []
     for r in results:
-        outbound = r[0] if isinstance(r, tuple) else r
-        ret = r[1] if isinstance(r, tuple) else None
+        # search_with_currency returns (flight_data, booking_token) tuples
+        flight_data = r[0] if isinstance(r, tuple) else r
+        # For round-trip: flight_data is (outbound, ret); for one-way: single Flight
+        if isinstance(flight_data, tuple):
+            outbound, ret = flight_data
+        else:
+            outbound, ret = flight_data, None
         if not outbound.legs:
             continue
         leg = outbound.legs[0]
