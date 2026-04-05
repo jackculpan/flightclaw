@@ -60,6 +60,7 @@ def parse_args():
     parser.add_argument("--cabin", default="ECONOMY", choices=SEAT_MAP.keys())
     parser.add_argument("--stops", default="ANY", choices=STOPS_MAP.keys())
     parser.add_argument("--target-price", type=float, help="Alert when price drops below this")
+    parser.add_argument("--exclude-basic", action="store_true", help="Exclude Basic Economy fares (Standard ticket type only)")
     return parser.parse_args()
 
 
@@ -118,8 +119,11 @@ def main():
             stops=STOPS_MAP[args.stops],
         )
 
-        print(f"Searching {orig_code} -> {dest_code} on {date}...")
-        results, currency = search_with_currency(filters, top_n=1)
+        label = f"Searching {orig_code} -> {dest_code} on {date}"
+        if args.exclude_basic:
+            label += " (excluding Basic Economy)"
+        print(label + "...")
+        results, currency = search_with_currency(filters, top_n=1, exclude_basic_economy=args.exclude_basic)
 
         now = datetime.now(timezone.utc).isoformat()
         price_entry = {"timestamp": now, "best_price": None, "airline": None}
@@ -141,6 +145,7 @@ def main():
             "cabin": args.cabin,
             "stops": args.stops,
             "target_price": args.target_price,
+            "exclude_basic": args.exclude_basic,
             "currency": currency,
             "added_at": now,
             "price_history": [price_entry],

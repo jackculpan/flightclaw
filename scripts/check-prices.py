@@ -73,7 +73,8 @@ def check_route(entry):
         stops=STOPS_MAP.get(entry.get("stops", "ANY"), MaxStops.ANY),
     )
 
-    results, currency = search_with_currency(filters, top_n=1)
+    exclude_basic = entry.get("exclude_basic", False)
+    results, currency = search_with_currency(filters, top_n=1, exclude_basic_economy=exclude_basic)
     if not results:
         return None, None, currency
 
