@@ -3,6 +3,7 @@
 import base64
 import json
 import re
+import urllib.parse
 from copy import deepcopy
 
 from fli.models import FlightSearchFilters
@@ -11,6 +12,29 @@ from fli.search import SearchFlights
 from fli.search.client import get_client
 
 BASE_URL = "https://www.google.com/_/FlightsFrontendUi/data/travel.frontend.flights.FlightsFrontendService/GetShoppingResults"
+
+# Google Flights API ticket type constants.
+# [1][28]=1 → Any (includes Basic Economy, default)
+# [1][28]=2 → Standard (excludes Basic Economy)
+_TICKET_TYPE_ANY = 1
+_TICKET_TYPE_STANDARD = 2  # excludes Basic Economy
+
+
+def _encode_with_ticket_type(filters: FlightSearchFilters, ticket_type: int) -> str:
+    """Encode filters with an explicit ticket type parameter.
+
+    The fli library doesn't expose ticket type natively. We reverse-engineered
+    that position [1][28] in the formatted payload controls this:
+      1 = Any (includes Basic Economy)
+      2 = Standard (excludes Basic Economy)
+    """
+    formatted = filters.format()
+    while len(formatted[1]) <= 28:
+        formatted[1].append(None)
+    formatted[1][28] = ticket_type
+    formatted_json = json.dumps(formatted, separators=(",", ":"))
+    wrapped = [None, formatted_json]
+    return urllib.parse.quote(json.dumps(wrapped, separators=(",", ":")))
 
 CURRENCY_SYMBOLS = {
     "USD": "$", "GBP": "\u00a3", "EUR": "\u20ac", "THB": "\u0e3f",
@@ -46,10 +70,13 @@ def fmt_price(price, code):
     return f"{currency_symbol(code)}{price:,.0f}"
 
 
-def _raw_search(filters):
+def _raw_search(filters, exclude_basic_economy: bool = False):
     """Make raw API call and return parsed response data."""
     client = get_client()
-    encoded = filters.encode()
+    if exclude_basic_economy:
+        encoded = _encode_with_ticket_type(filters, _TICKET_TYPE_STANDARD)
+    else:
+        encoded = filters.encode()
     response = client.post(
         url=BASE_URL,
         data=f"f.req={encoded}",
@@ -75,7 +102,7 @@ def _extract_booking_token(item):
     return None
 
 
-def search_with_currency(filters: FlightSearchFilters, top_n: int = 5):
+def search_with_currency(filters: FlightSearchFilters, top_n: int = 5, exclude_basic_economy: bool = False):
     """Search flights and detect currency from the raw API response.
 
     Returns (results, currency_code) where:
@@ -83,8 +110,13 @@ def search_with_currency(filters: FlightSearchFilters, top_n: int = 5):
     - booking_token is the tfs protobuf for Google Flights booking URLs
     - currency_code is e.g. 'THB', 'USD', 'GBP'
     Makes a single API call.
+
+    Args:
+        filters: Flight search filters
+        top_n: Max results to return
+        exclude_basic_economy: If True, filters out Basic Economy fares (Standard ticket type)
     """
-    data = _raw_search(filters)
+    data = _raw_search(filters, exclude_basic_economy=exclude_basic_economy)
     if data is None:
         return None, "USD"
 
@@ -114,7 +146,7 @@ def search_with_currency(filters: FlightSearchFilters, top_n: int = 5):
     for selected_flight in results[:top_n]:
         selected_filters = deepcopy(filters)
         selected_filters.flight_segments[0].selected_flight = selected_flight
-        return_data = _raw_search(selected_filters)
+        return_data = _raw_search(selected_filters, exclude_basic_economy=exclude_basic_economy)
         if return_data is None:
             continue
         for ri in [2, 3]:
