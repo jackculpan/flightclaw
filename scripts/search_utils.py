@@ -27,12 +27,19 @@ def _encode_with_ticket_type(filters: FlightSearchFilters, ticket_type: int) -> 
     that position [1][28] in the formatted payload controls this:
       1 = Any (includes Basic Economy)
       2 = Standard (excludes Basic Economy)
+
+    This is intentionally defensive and should be updated if
+    FlightSearchFilters.format() changes. Tested with fli 0.8.0.
     """
     formatted = filters.format()
+    if not isinstance(formatted, list) or len(formatted) < 2 or not isinstance(formatted[1], list):
+        raise ValueError("Unexpected payload structure from FlightSearchFilters.format()")
     while len(formatted[1]) <= 28:
         formatted[1].append(None)
     formatted[1][28] = ticket_type
     formatted_json = json.dumps(formatted, separators=(",", ":"))
+    if json.loads(formatted_json)[1][28] != ticket_type:
+        raise ValueError("Encoded FlightSearchFilters.format() payload lost ticket type")
     wrapped = [None, formatted_json]
     return urllib.parse.quote(json.dumps(wrapped, separators=(",", ":")))
 

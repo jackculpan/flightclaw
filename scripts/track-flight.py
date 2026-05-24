@@ -91,6 +91,8 @@ def main():
         route_id = f"{orig_code}-{dest_code}-{date}"
         if args.return_date:
             route_id += f"-RT-{args.return_date}"
+        if args.exclude_basic:
+            route_id += "-STD"
 
         if any(t["id"] == route_id for t in tracked):
             print(f"Already tracking {route_id}")
