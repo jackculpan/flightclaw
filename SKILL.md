@@ -29,6 +29,7 @@ python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --cabin BUSINESS
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --return-date 2025-07-08
 python skills/flightclaw/scripts/search-flights.py LHR JFK 2025-07-01 --stops NON_STOP --results 10
+python skills/flightclaw/scripts/search-flights.py DTW MCO 2026-10-09 --return-date 2026-10-15 --exclude-basic
 # Multiple airports (searches all combinations)
 python skills/flightclaw/scripts/search-flights.py LHR,MAN JFK,EWR 2025-07-01
 # Date range (searches each day)
@@ -46,6 +47,7 @@ Arguments:
 - `--cabin` - ECONOMY (default), PREMIUM_ECONOMY, BUSINESS, FIRST
 - `--stops` - ANY (default), NON_STOP, ONE_STOP, TWO_STOPS
 - `--results` - Number of results (default: 5)
+- `--exclude-basic` - Exclude Basic Economy fares; show Standard (Main Cabin) prices only
 
 ### Track a Flight
 Add a route to the price tracking list and record the current price. Supports multiple airports and date ranges (creates a separate tracking entry for each combination).
@@ -54,6 +56,7 @@ Add a route to the price tracking list and record the current price. Supports mu
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --target-price 400
 python skills/flightclaw/scripts/track-flight.py LHR JFK 2025-07-01 --return-date 2025-07-08 --cabin BUSINESS
+python skills/flightclaw/scripts/track-flight.py DTW MCO 2026-10-09 --return-date 2026-10-15 --exclude-basic --target-price 500
 # Track multiple airports and dates
 python skills/flightclaw/scripts/track-flight.py LHR,MAN JFK,EWR 2025-07-01 --date-to 2025-07-03 --target-price 400
 ```
@@ -61,6 +64,7 @@ python skills/flightclaw/scripts/track-flight.py LHR,MAN JFK,EWR 2025-07-01 --da
 Arguments:
 - Same as search-flights, plus:
 - `--target-price` - Alert when price drops below this amount
+- `--exclude-basic` - Exclude Basic Economy fares (persisted per tracked route)
 
 ### Check Prices
 Check all tracked flights for price changes. Designed to run on a schedule (cron).
