@@ -115,7 +115,9 @@ def check_route(entry):
         # Filter by specific flight numbers if set
         if target_out and leg.flight_number != target_out:
             continue
-        if target_ret and ret_leg and ret_leg.flight_number != target_ret:
+        # Reject results lacking the tracked return leg (e.g. a one-way result
+        # mixed in) so specific-return tracking never matches a missing leg.
+        if target_ret and (not ret_leg or ret_leg.flight_number != target_ret):
             continue
 
         # Filter by time windows if no specific flight numbers
