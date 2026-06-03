@@ -265,7 +265,7 @@ def register_duffel_tools(mcp):
         output.append(f"\n{len(orders)} order(s).")
         return "\n\n".join(output)
 
-    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
+    @mcp.tool(annotations={"idempotentHint": True})  # persists via upsert_order; not read-only
     def duffel_get_order(order_id: str) -> str:
         """Get live order status from Duffel.
 

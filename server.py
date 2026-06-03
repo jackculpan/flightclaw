@@ -373,7 +373,7 @@ def price_alerts_resource() -> str:
         if current is None:
             continue
         target = entry.get("target_price")
-        if target and current <= target:
+        if target is not None and current <= target:
             alerts.append({
                 "type": "target_reached",
                 "route": f"{entry['origin']} -> {entry['destination']}",

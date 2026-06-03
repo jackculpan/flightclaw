@@ -124,7 +124,7 @@ def register_tracking_tools(mcp):
         output.append(summary)
         return "\n".join(output)
 
-    @mcp.tool(annotations={"idempotentHint": True})
+    @mcp.tool(annotations={"idempotentHint": False})  # appends price history + persists on each call
     def check_prices(threshold: float = 10.0) -> str:
         """Check all tracked flights for price changes and generate alerts.
 

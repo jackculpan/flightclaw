@@ -99,6 +99,8 @@ def build_filters(
     exclude_basic_economy=False, emissions="ALL",
     checked_bags=0, carry_on=False, show_all_results=True,
 ):
+    if not 0 <= checked_bags <= 2:
+        raise ParseError("checked_bags must be between 0 and 2")
     origin = resolve_airport(orig_code)
     destination = resolve_airport(dest_code)
 
@@ -149,6 +151,8 @@ def build_date_filters(
     earliest_arrival=None, latest_arrival=None,
     emissions="ALL", checked_bags=0, carry_on=False,
 ):
+    if not 0 <= checked_bags <= 2:
+        raise ParseError("checked_bags must be between 0 and 2")
     origin = resolve_airport(orig_code)
     destination = resolve_airport(dest_code)
 
