@@ -73,18 +73,25 @@ def format_results(results, currency, is_round_trip=False):
         return
 
     for i, result in enumerate(results, 1):
-        if is_round_trip and isinstance(result, tuple):
-            outbound, ret = result
+        # search_with_currency yields (flight_data, booking_token); flight_data is
+        # an (outbound, ret) pair for round trips or a single Flight for one-ways.
+        flight_data = result[0] if isinstance(result, tuple) else result
+        if is_round_trip and isinstance(flight_data, tuple):
+            outbound, ret = flight_data
+            # ret.price is the full round-trip total for this outbound+return pair
+            # (the return-leg search returns the combined price, not a per-leg fare),
+            # so it is the price for the whole option — not something to add to
+            # outbound.price, which is the cheapest total for that outbound.
             print(f"\n{'='*60}")
-            print(f"Option {i}: {fmt_price(outbound.price + ret.price, currency)} total")
-            print(f"  Outbound: {fmt_price(outbound.price, currency)} | {format_duration(outbound.duration)} | {outbound.stops} stop(s)")
+            print(f"Option {i}: {fmt_price(ret.price, currency)} total")
+            print(f"  Outbound: {format_duration(outbound.duration)} | {outbound.stops} stop(s)")
             for leg in outbound.legs:
                 print(f"    {leg.airline.name} {leg.flight_number}: {leg.departure_airport.name} {leg.departure_datetime.strftime('%H:%M')} -> {leg.arrival_airport.name} {leg.arrival_datetime.strftime('%H:%M')}")
-            print(f"  Return: {fmt_price(ret.price, currency)} | {format_duration(ret.duration)} | {ret.stops} stop(s)")
+            print(f"  Return: {format_duration(ret.duration)} | {ret.stops} stop(s)")
             for leg in ret.legs:
                 print(f"    {leg.airline.name} {leg.flight_number}: {leg.departure_airport.name} {leg.departure_datetime.strftime('%H:%M')} -> {leg.arrival_airport.name} {leg.arrival_datetime.strftime('%H:%M')}")
         else:
-            flight = result[0] if isinstance(result, tuple) else result
+            flight = flight_data
             print(f"\n{'='*60}")
             print(f"Option {i}: {fmt_price(flight.price, currency)} | {format_duration(flight.duration)} | {flight.stops} stop(s)")
             for leg in flight.legs:
