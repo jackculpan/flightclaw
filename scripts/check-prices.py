@@ -150,14 +150,16 @@ def check_route(entry):
             "departs": leg.departure_datetime.strftime("%I:%M %p") if leg.departure_datetime else "?",
             "arrives": leg.arrival_datetime.strftime("%I:%M %p") if leg.arrival_datetime else "?",
             "return_flight_number": ret_leg.flight_number if ret_leg else None,
+            "return_airline": ret_leg.airline.name if ret_leg else None,
             "return_departs": ret_leg.departure_datetime.strftime("%I:%M %p") if ret_leg and ret_leg.departure_datetime else None,
             "return_arrives": ret_leg.arrival_datetime.strftime("%I:%M %p") if ret_leg and ret_leg.arrival_datetime else None,
         })
 
     if not flights:
-        not_found_msg = f"DL{target_out}" if target_out else "any flight"
+        carrier = (preferred_airline + " ") if preferred_airline else "flight "
+        not_found_msg = f"{carrier}{target_out}" if target_out else "any flight"
         if target_ret:
-            not_found_msg += f" / DL{target_ret}"
+            not_found_msg += f" / {carrier}{target_ret}"
         print(f"  ⚠️  No results for {not_found_msg} — flight may not be operating or sold out")
         return None, None, None, currency
 
@@ -210,9 +212,9 @@ def main():
                     seen[key] = f
             for f in sorted(seen.values(), key=lambda x: (x["price"], x["departs"])):
                 marker = "★" if f["price"] == price else " "
-                fn = f"DL{f['flight_number']}" if f["airline"] == "Delta Air Lines" else f"{f['airline']} {f['flight_number']}"
+                fn = f"{f['airline']} {f['flight_number']}"
                 if has_return and f.get("return_flight_number"):
-                    ret_fn = f"DL{f['return_flight_number']}"
+                    ret_fn = f"{f.get('return_airline') or ''} {f['return_flight_number']}".strip()
                     print(f"  {marker} {fmt_price(f['price'], currency):>8}  {fn} {f['departs']}→{f['arrives']}  /  ret {ret_fn} {f['return_departs']}→{f['return_arrives']}")
                 else:
                     print(f"  {marker} {fmt_price(f['price'], currency):>8}  {fn} {f['departs']}→{f['arrives']}")
