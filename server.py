@@ -11,7 +11,11 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
 from fli.core.parsers import ParseError
-from fli.mcp.server import FliMCP
+
+try:  # fli >= 0.8.5 dropped the FliMCP base class; use FastMCP directly.
+    from fli.mcp.server import FliMCP as _MCP
+except ImportError:
+    from fastmcp import FastMCP as _MCP
 
 from helpers import (
     build_date_filters,
@@ -23,7 +27,7 @@ from helpers import (
 from search_utils import fmt_price, search_with_currency
 from tracking import register_tracking_tools
 
-mcp = FliMCP("flightclaw")
+mcp = _MCP("flightclaw")
 
 BOOKING_BASE_URL = "https://www.google.com/travel/flights/booking?tfs="
 
@@ -306,83 +310,32 @@ register_passenger_tools(mcp)
 # Prompts
 # =============================================================================
 
-from mcp.types import PromptArgument, PromptMessage, TextContent
+@mcp.prompt(name="search-route", description="Search for flights on a specific route and date.")
+def search_route(origin: str, destination: str, date: str, return_date: str = "") -> str:
+    return (
+        f"Search for flights from {origin} to {destination} on {date}"
+        + (f" returning {return_date}" if return_date else "")
+        + ". Show the cheapest options with booking links."
+    )
 
-mcp.add_prompt(
-    name="search-route",
-    description="Search for flights on a specific route and date.",
-    arguments=[
-        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
-        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
-        PromptArgument(name="date", description="Departure date (YYYY-MM-DD)", required=True),
-        PromptArgument(name="return_date", description="Return date (YYYY-MM-DD)", required=False),
-    ],
-    build_messages=lambda args: [
-        PromptMessage(
-            role="user",
-            content=TextContent(
-                type="text",
-                text=(
-                    f"Search for flights from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
-                    f"on {args.get('date', 'tomorrow')}"
-                    + (f" returning {args['return_date']}" if args.get("return_date") else "")
-                    + ". Show the cheapest options with booking links."
-                ),
-            ),
-        ),
-    ],
-)
 
-mcp.add_prompt(
-    name="find-cheapest-dates",
-    description="Find the cheapest dates to fly on a route within a date range.",
-    arguments=[
-        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
-        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
-        PromptArgument(name="from_date", description="Start of date range (YYYY-MM-DD)", required=True),
-        PromptArgument(name="to_date", description="End of date range (YYYY-MM-DD)", required=True),
-        PromptArgument(name="trip_duration", description="Trip length in days for round trips", required=False),
-    ],
-    build_messages=lambda args: [
-        PromptMessage(
-            role="user",
-            content=TextContent(
-                type="text",
-                text=(
-                    f"Find the cheapest dates to fly from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
-                    f"between {args.get('from_date')} and {args.get('to_date')}"
-                    + (f" with a trip duration of {args['trip_duration']} days" if args.get("trip_duration") else "")
-                    + ". Sort by price and highlight the best deals."
-                ),
-            ),
-        ),
-    ],
-)
+@mcp.prompt(name="find-cheapest-dates", description="Find the cheapest dates to fly on a route within a date range.")
+def find_cheapest_dates(origin: str, destination: str, from_date: str, to_date: str, trip_duration: str = "") -> str:
+    return (
+        f"Find the cheapest dates to fly from {origin} to {destination} "
+        f"between {from_date} and {to_date}"
+        + (f" with a trip duration of {trip_duration} days" if trip_duration else "")
+        + ". Sort by price and highlight the best deals."
+    )
 
-mcp.add_prompt(
-    name="track-and-alert",
-    description="Set up price tracking on a route with a target price alert.",
-    arguments=[
-        PromptArgument(name="origin", description="Departure airport IATA code", required=True),
-        PromptArgument(name="destination", description="Arrival airport IATA code", required=True),
-        PromptArgument(name="date", description="Departure date (YYYY-MM-DD)", required=True),
-        PromptArgument(name="target_price", description="Target price to alert on", required=False),
-    ],
-    build_messages=lambda args: [
-        PromptMessage(
-            role="user",
-            content=TextContent(
-                type="text",
-                text=(
-                    f"Track the price of flights from {args.get('origin', 'LHR')} to {args.get('destination', 'JFK')} "
-                    f"on {args.get('date')}"
-                    + (f" and alert me when the price drops below {args['target_price']}" if args.get("target_price") else "")
-                    + ". Show the current price after setting up tracking."
-                ),
-            ),
-        ),
-    ],
-)
+
+@mcp.prompt(name="track-and-alert", description="Set up price tracking on a route with a target price alert.")
+def track_and_alert(origin: str, destination: str, date: str, target_price: str = "") -> str:
+    return (
+        f"Track the price of flights from {origin} to {destination} on {date}"
+        + (f" and alert me when the price drops below {target_price}" if target_price else "")
+        + ". Show the current price after setting up tracking."
+    )
 
 
 # =============================================================================
