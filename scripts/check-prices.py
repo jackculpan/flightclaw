@@ -84,13 +84,16 @@ def check_route(entry):
         airlines=airlines,
     )
 
-    exclude_basic = entry.get("exclude_basic", False)
-    results, currency = search_with_currency(filters, top_n=10, exclude_basic_economy=exclude_basic)
-    if not results:
-        return None, None, None, currency
-
     target_out = entry.get("outbound_flight_number")
     target_ret = entry.get("return_flight_number")
+
+    exclude_basic = entry.get("exclude_basic", False)
+    # Flight-number matching happens after the search, so a specific pair could
+    # sit beyond the default window. Search a wider set when tracking exact flights.
+    top_n = 50 if (target_out or target_ret) else 10
+    results, currency = search_with_currency(filters, top_n=top_n, exclude_basic_economy=exclude_basic)
+    if not results:
+        return None, None, None, currency
 
     # Optional time-window filters (format: "HH:MM" 24h, e.g. "08:00")
     depart_after = entry.get("depart_after")
@@ -206,10 +209,11 @@ def main():
         # Print all flight options, deduped by outbound flight (show best price per outbound)
         if all_flights:
             has_return = any(f.get("return_flight_number") for f in all_flights)
-            # Group by outbound flight number, keep lowest price per outbound
+            # Group by outbound carrier + flight number (so DL123 and UA123 stay
+            # distinct), keeping the lowest price per outbound.
             seen = {}
             for f in all_flights:
-                key = f["flight_number"]
+                key = (f["airline"], f["flight_number"])
                 if key not in seen or f["price"] < seen[key]["price"]:
                     seen[key] = f
             for f in sorted(seen.values(), key=lambda x: (x["price"], x["departs"])):
