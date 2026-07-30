@@ -9,8 +9,8 @@ FlightClaw runs as a local [MCP](https://modelcontextprotocol.io) server, giving
 ### Setup
 
 ```bash
-# Install dependencies
-pip install flights "mcp[cli]"
+# Install dependencies (or just run ./setup.sh)
+pip install "flights==0.9.0" "mcp[cli]>=1.24,<2" fastmcp pydantic-settings
 
 # Add to Claude Code
 claude mcp add flightclaw -- python3 /path/to/flightclaw/server.py
