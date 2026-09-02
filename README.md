@@ -10,7 +10,7 @@ FlightClaw runs as a local [MCP](https://modelcontextprotocol.io) server, giving
 
 ```bash
 # Install dependencies
-pip install flights "mcp[cli]"
+pip install "flights==0.9.0" "mcp[cli]<2" fastmcp pydantic-settings
 
 # Add to Claude Code
 claude mcp add flightclaw -- python3 /path/to/flightclaw/server.py
@@ -99,3 +99,42 @@ python scripts/list-tracked.py
 ```bash
 npx skills add jackculpan/flightclaw
 ```
+
+## Install (Grok)
+
+FlightClaw ships a Grok plugin manifest (`.grok-plugin/plugin.json`) and an MCP
+connector (`.mcp.json`), so Grok Build installs it from the xAI marketplace:
+
+```
+/plugin marketplace add xai-org/plugin-marketplace
+/plugin install flightclaw
+```
+
+The connector runs `server.py` through `uv`, which resolves the pinned
+dependencies at start-up. Install [uv](https://docs.astral.sh/uv/) first; no
+other setup step runs on your machine.
+
+### What the connector reaches, and what it needs
+
+| Endpoint | Purpose | Credentials |
+|---|---|---|
+| `google.com/travel/flights` (via the `fli` library) | Flight search and price tracking | none |
+| `FLIGHTCLAW_API_URL` (the private flightclaw-api Worker) | Traveller profiles, preferences, cards, groups, trip history, Duffel booking and Link virtual-card payment | `FLIGHTCLAW_API_KEY` |
+| Kiwi Tequila (`api.tequila.kiwi.com`) | Optional bookability check; hand-off deep links to `kiwi.com` and `skyscanner.net` | `KIWI_API_KEY`, `KIWI_AFFILID` |
+
+Search and price tracking work with no credentials at all. Every other group of
+tools stays inactive until its variables are set:
+
+| Variable | Effect when unset |
+|---|---|
+| `FLIGHTCLAW_API_URL`, `FLIGHTCLAW_API_KEY` | Profile, booking and payment tools return "not configured" |
+| `FLIGHTCLAW_TENANT` | Server default tenant is used |
+| `KIWI_API_KEY`, `KIWI_AFFILID` | Kiwi coverage is skipped |
+| `HOST`, `PORT` | Only read in HTTP transport mode; the connector runs over stdio |
+
+FlightClaw reads no other environment variable, writes only to its own `data/`
+directory, and runs no install-time script.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

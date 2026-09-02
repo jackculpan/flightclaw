@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "flightclaw": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--python",
+        "3.12",
+        "--with",
+        "flights==0.9.0",
+        "--with",
+        "mcp[cli]<2",
+        "--with",
+        "fastmcp",
+        "--with",
+        "pydantic-settings",
+        "python",
+        "${GROK_PLUGIN_ROOT}/server.py"
+      ]
+    }
+  }
+}

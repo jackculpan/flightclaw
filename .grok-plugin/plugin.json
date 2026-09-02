@@ -1,0 +1,17 @@
+{
+  "name": "flightclaw",
+  "version": "1.0.0",
+  "description": "Search Google Flights, price-track routes and get alerts when fares drop, then book and pay through Duffel. Remembers travellers, companions, loyalty programmes, cards and cabin preferences so options come back ranked for the person asking.",
+  "author": {
+    "name": "Jack Culpan",
+    "url": "https://flightclaw.com"
+  },
+  "homepage": "https://flightclaw.com",
+  "repository": "https://github.com/jackculpan/flightclaw",
+  "license": "MIT",
+  "keywords": [
+    "flightclaw",
+    "flight claw",
+    "flightclaw track"
+  ]
+}
