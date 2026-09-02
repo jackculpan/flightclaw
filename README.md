@@ -102,13 +102,36 @@ npx skills add jackculpan/flightclaw
 
 ## Install (Grok)
 
-FlightClaw ships a Grok plugin manifest (`.grok-plugin/plugin.json`) and an MCP
-connector (`.mcp.json`), so Grok Build installs it from the xAI marketplace:
-
 ```
 /plugin marketplace add xai-org/plugin-marketplace
 /plugin install flightclaw
 ```
+
+## Install (Claude Code)
+
+```
+/plugin marketplace add jackculpan/flightclaw
+/plugin install flightclaw@flightclaw
+```
+
+## Install (Cursor)
+
+```
+/plugin marketplace add jackculpan/flightclaw
+/plugin install flightclaw
+```
+
+## Install (Gemini CLI)
+
+```bash
+gemini extensions install https://github.com/jackculpan/flightclaw
+```
+
+Each client reads its own manifest from this repo — `.grok-plugin/`,
+`.claude-plugin/`, `.cursor-plugin/` and `gemini-extension.json` — and they all
+start the same MCP server.
+
+## The connector
 
 The connector runs `server.py` through `uv`, which resolves the pinned
 dependencies at start-up. Install [uv](https://docs.astral.sh/uv/) first; no
