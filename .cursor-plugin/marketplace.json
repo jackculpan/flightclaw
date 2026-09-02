@@ -1,0 +1,16 @@
+{
+  "name": "flightclaw",
+  "owner": {
+    "name": "Jack Culpan"
+  },
+  "metadata": {
+    "description": "FlightClaw — flight search, price tracking and booking."
+  },
+  "plugins": [
+    {
+      "name": "flightclaw",
+      "source": ".",
+      "description": "Search Google Flights, price-track routes and get alerts when fares drop, then book and pay through Duffel."
+    }
+  ]
+}

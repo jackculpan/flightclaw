@@ -1,0 +1,48 @@
+{
+  "name": "flightclaw",
+  "version": "1.0.0",
+  "description": "Search Google Flights, price-track routes and get alerts when fares drop, then book and pay through Duffel. Remembers travellers, companions, loyalty programmes, cards and cabin preferences so options come back ranked for the person asking.",
+  "contextFileName": "SKILL.md",
+  "mcpServers": {
+    "flightclaw": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-project",
+        "--python",
+        "3.12",
+        "--with",
+        "flights==0.9.0",
+        "--with",
+        "mcp[cli]<2",
+        "--with",
+        "fastmcp",
+        "--with",
+        "pydantic-settings",
+        "python",
+        "${extensionPath}/server.py"
+      ],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "settings": [
+    {
+      "name": "FlightClaw API URL",
+      "description": "Base URL of your flightclaw-api Worker. Leave unset to use flight search and price tracking only.",
+      "envVar": "FLIGHTCLAW_API_URL",
+      "sensitive": false
+    },
+    {
+      "name": "FlightClaw API key",
+      "description": "API key for your flightclaw-api Worker. Unlocks the traveller profile, booking and payment tools.",
+      "envVar": "FLIGHTCLAW_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "Kiwi Tequila API key",
+      "description": "Optional. Enables the Kiwi bookability check during search.",
+      "envVar": "KIWI_API_KEY",
+      "sensitive": true
+    }
+  ]
+}

@@ -16,7 +16,7 @@
         "--with",
         "pydantic-settings",
         "python",
-        "${CLAUDE_PLUGIN_ROOT}/server.py"
+        "${CURSOR_PLUGIN_ROOT}/server.py"
       ]
     }
   }
